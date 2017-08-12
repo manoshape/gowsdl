@@ -1,6 +1,6 @@
 # WSDL to Go
 
-[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/hooklift/gowsdl?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+[![Gitter](https://badges.gitter.im/Join Chat.svg)](https://gitter.im/hooklift/gowsdl?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 [![GoDoc](https://godoc.org/github.com/hooklift/gowsdl?status.svg)](https://godoc.org/github.com/hooklift/gowsdl)
 [![Build Status](https://travis-ci.org/hooklift/gowsdl.svg?branch=master)](https://travis-ci.org/hooklift/gowsdl)
 
@@ -9,8 +9,7 @@ Generates Go code from a WSDL file.
 ### Install
 
 * [Download binary release](https://github.com/hooklift/gowsdl/releases)
-* Download and build locally: `go get github.com/hooklift/gowsdl/...`
-* Install from Homebrew: `brew install gowsdl`
+* Or: `go get github.com/hooklift/gowsdl/...`
 
 ### Goals
 * Generate idiomatic Go code as much as possible

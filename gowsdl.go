@@ -30,7 +30,6 @@ const maxRecursion uint8 = 20
 type GoWSDL struct {
 	file, pkg             string
 	ignoreTLS             bool
-	makePublicFn          func(string) string
 	wsdl                  *WSDL
 	resolvedXSDExternals  map[string]bool
 	currentRecursionLevel uint8
@@ -76,7 +75,7 @@ func downloadFile(url string, ignoreTLS bool) ([]byte, error) {
 }
 
 // NewGoWSDL initializes WSDL generator.
-func NewGoWSDL(file, pkg string, ignoreTLS bool, exportAllTypes bool) (*GoWSDL, error) {
+func NewGoWSDL(file, pkg string, ignoreTLS bool) (*GoWSDL, error) {
 	file = strings.TrimSpace(file)
 	if file == "" {
 		return nil, errors.New("WSDL file is required to generate Go proxy")
@@ -86,16 +85,11 @@ func NewGoWSDL(file, pkg string, ignoreTLS bool, exportAllTypes bool) (*GoWSDL, 
 	if pkg == "" {
 		pkg = "myservice"
 	}
-	makePublicFn := func(id string) string { return id }
-	if exportAllTypes {
-		makePublicFn = makePublic
-	}
 
 	return &GoWSDL{
-		file:         file,
-		pkg:          pkg,
-		ignoreTLS:    ignoreTLS,
-		makePublicFn: makePublicFn,
+		file:      file,
+		pkg:       pkg,
+		ignoreTLS: ignoreTLS,
 	}, nil
 }
 
@@ -184,65 +178,88 @@ func (g *GoWSDL) unmarshal() error {
 	return nil
 }
 
-func (g *GoWSDL) resolveXSDExternals(schema *XSDSchema, u *url.URL) error {
-	download := func(u1 *url.URL, loc string) error{
-		location, err := u1.Parse(loc)
+func (g *GoWSDL) getSchema(schemaLocation string, url *url.URL) error {
+	_, schemaFile := filepath.Split(schemaLocation)
+
+	data, err := ioutil.ReadFile(schemaFile)
+	if err != nil {
+
+		location, err := url.Parse(schemaLocation)
 		if err != nil {
 			return err
 		}
-		_, schemaName := filepath.Split(location.Path)
-		if g.resolvedXSDExternals[schemaName] {
-			return nil
-		}
 
-		schemaLocation := location.String()
+		schemaLocation = location.String()
+
 		if !location.IsAbs() {
-			if !u1.IsAbs() {
-				return fmt.Errorf("Unable to resolve external schema %s through WSDL URL %s", schemaLocation, u1)
+			if !url.IsAbs() {
+				return fmt.Errorf("Unable to resolve external schema %s through WSDL URL %s", schemaLocation, url)
 			}
-			schemaLocation = u1.Scheme + "://" + u1.Host + schemaLocation
+			schemaLocation = url.Scheme + "://" + url.Host + schemaLocation
 		}
 
 		log.Println("Downloading external schema", "location", schemaLocation)
 
-		data, err := downloadFile(schemaLocation, g.ignoreTLS)
-		newschema := new(XSDSchema)
-
-		err = xml.Unmarshal(data, newschema)
+		data, err = downloadFile(schemaLocation, g.ignoreTLS)
 		if err != nil {
 			return err
 		}
+	}
+	newschema := new(XSDSchema)
 
-		if len(newschema.Includes) > 0 &&
-			maxRecursion > g.currentRecursionLevel {
+	err = xml.Unmarshal(data, newschema)
+	if err != nil {
+		return err
+	}
+
+	if len(newschema.Includes) > 0 || len(newschema.Imports) > 0 {
+		if maxRecursion > g.currentRecursionLevel {
 
 			g.currentRecursionLevel++
 
 			//log.Printf("Entering recursion %d\n", g.currentRecursionLevel)
-			g.resolveXSDExternals(newschema, u1)
+			g.resolveXSDExternals(newschema, url)
 		}
+	}
 
-		g.wsdl.Types.Schemas = append(g.wsdl.Types.Schemas, newschema)
+	g.wsdl.Types.Schemas = append(g.wsdl.Types.Schemas, newschema)
 
+	return nil
+}
+
+func (g *GoWSDL) resolveXSDExternals(schema *XSDSchema, url *url.URL) error {
+	if len(schema.Includes) > 0 || len(schema.Imports) > 0 {
 		if g.resolvedXSDExternals == nil {
 			g.resolvedXSDExternals = make(map[string]bool, maxRecursion)
 		}
-		g.resolvedXSDExternals[schemaName] = true
-
-		return nil
 	}
 
-
-	for _, impts := range schema.Imports {
-		if e := download(u, impts.SchemaLocation); e!= nil {
-			return e
-		}
-	}
-
+	var err error
 	for _, incl := range schema.Includes {
-		if e := download(u, incl.SchemaLocation); e!= nil {
-			return e
+		if g.resolvedXSDExternals[incl.SchemaLocation] {
+			continue
 		}
+
+		err = g.getSchema(incl.SchemaLocation, url)
+		if err != nil {
+			return err
+		}
+
+		g.resolvedXSDExternals[incl.SchemaLocation] = true
+	}
+
+	for _, imp := range schema.Imports {
+		if g.resolvedXSDExternals[imp.SchemaLocation] {
+			continue
+		}
+
+		err = g.getSchema(imp.SchemaLocation, url)
+		if err != nil {
+			return err
+		}
+
+		g.resolvedXSDExternals[imp.SchemaLocation] = true
+
 	}
 
 	return nil
@@ -253,11 +270,8 @@ func (g *GoWSDL) genTypes() ([]byte, error) {
 		"toGoType":             toGoType,
 		"stripns":              stripns,
 		"replaceReservedWords": replaceReservedWords,
-		"makePublic":           g.makePublicFn,
-		"makeFieldPublic":      makePublic,
+		"makePublic":           makePublic,
 		"comment":              comment,
-		"removeNS":             removeNS,
-		"goString":             goString,
 	}
 
 	//TODO resolve element refs in place.
@@ -278,7 +292,7 @@ func (g *GoWSDL) genOperations() ([]byte, error) {
 		"toGoType":             toGoType,
 		"stripns":              stripns,
 		"replaceReservedWords": replaceReservedWords,
-		"makePublic":           g.makePublicFn,
+		"makePublic":           makePublic,
 		"findType":             g.findType,
 		"findSOAPAction":       g.findSOAPAction,
 		"findServiceAddress":   g.findServiceAddress,
@@ -299,7 +313,7 @@ func (g *GoWSDL) genHeader() ([]byte, error) {
 		"toGoType":             toGoType,
 		"stripns":              stripns,
 		"replaceReservedWords": replaceReservedWords,
-		"makePublic":           g.makePublicFn,
+		"makePublic":           makePublic,
 		"findType":             g.findType,
 		"comment":              comment,
 	}
@@ -365,17 +379,13 @@ func replaceReservedWords(identifier string) string {
 // Normalizes value to be used as a valid Go identifier, avoiding compilation issues
 func normalize(value string) string {
 	mapping := func(r rune) rune {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			return r
 		}
 		return -1
 	}
 
 	return strings.Map(mapping, value)
-}
-
-func goString(s string) string {
-	return strings.Replace(s, "\"", "\\\"", -1)
 }
 
 var xsd2GoTypes = map[string]string{
@@ -400,17 +410,6 @@ var xsd2GoTypes = map[string]string{
 	"unsignedbyte":  "byte",
 	"unsignedlong":  "uint64",
 	"anytype":       "interface{}",
-}
-
-func removeNS(xsdType string) string {
-	// Handles name space, ie. xsd:string, xs:string
-	r := strings.Split(xsdType, ":")
-
-	if len(r) == 2 {
-		return r[1]
-	} else {
-		return r[0]
-	}
 }
 
 func toGoType(xsdType string) string {

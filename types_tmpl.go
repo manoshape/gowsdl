@@ -12,7 +12,7 @@ var typesTmpl = `
 		{{with .Restriction}}
 			{{range .Enumeration}}
 				{{if .Doc}} {{.Doc | comment}} {{end}}
-				{{$type}}{{$value := replaceReservedWords .Value}}{{$value | makePublic}} {{$type}} = "{{goString .Value}}" {{end}}
+				{{$type}}{{$value := replaceReservedWords .Value}}{{$value | makePublic}} {{$type}} = "{{$value}}" {{end}}
 		{{end}}
 	)
 {{end}}
@@ -30,9 +30,9 @@ var typesTmpl = `
 {{define "Attributes"}}
 	{{range .}}
 		{{if .Doc}} {{.Doc | comment}} {{end}} {{if not .Type}}
-			{{ .Name | makeFieldPublic}} {{toGoType .SimpleType.Restriction.Base}} ` + "`" + `xml:"{{.Name}},attr,omitempty"` + "`" + `
+			{{ .Name | makePublic}} {{toGoType .SimpleType.Restriction.Base}} ` + "`" + `xml:"{{.Name}},attr,omitempty"` + "`" + `
 		{{else}}
-			{{ .Name | makeFieldPublic}} {{toGoType .Type}} ` + "`" + `xml:"{{.Name}},attr,omitempty"` + "`" + `
+			{{ .Name | makePublic}} {{toGoType .Type}} ` + "`" + `xml:"{{.Name}},attr,omitempty"` + "`" + `
 		{{end}}
 	{{end}}
 {{end}}
@@ -60,18 +60,7 @@ var typesTmpl = `
 {{end}}
 
 {{define "Elements"}}
-	{{range .}}
-		{{if ne .Ref ""}}
-			{{removeNS .Ref | replaceReservedWords  | makePublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Ref | toGoType}} ` + "`" + `xml:"{{.Ref | removeNS}},omitempty"` + "`" + `
-		{{else}}
-		{{if not .Type}}
-			{{template "ComplexTypeInline" .}}
-		{{else}}
-			{{if .Doc}}
-				{{.Doc | comment}} {{"\n"}}
-			{{end}}
-			{{replaceReservedWords .Name | makeFieldPublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` {{end}}
-		{{end}}
+	{{range .}} {{if not .Type}} {{template "ComplexTypeInline" .}} {{else}} {{if .Doc}} {{.Doc | comment}} {{"\n"}} {{end}} {{replaceReservedWords .Name | makePublic}} {{if eq .MaxOccurs "unbounded"}}[]{{end}}{{.Type | toGoType}} ` + "`" + `xml:"{{.Name}},omitempty"` + "`" + ` {{end}}
 	{{end}}
 {{end}}
 
