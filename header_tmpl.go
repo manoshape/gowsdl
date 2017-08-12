@@ -12,7 +12,6 @@ import (
 	"time"
  	"bytes"
  	"crypto/tls"
- 	"encoding/xml"
  	"io/ioutil"
 	"net/http"
 	"log"
